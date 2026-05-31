@@ -1,1 +1,8 @@
 -c constraints.txt
+streamlit
+pandas
+numpy
+joblib
+plotly
+scikit-learn
+pillow
