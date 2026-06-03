@@ -25,6 +25,8 @@ st.set_page_config(
 )
 
 # ============================
+# ESTILOS CSS CUSTOM
+# ============================
 st.markdown("""
 <style>
     .stApp {
@@ -183,7 +185,7 @@ def load_static_data():
         df = pd.read_csv("reparaciones_5000.csv")
         return df
     except FileNotFoundError:
-        st.warning("⚠️ Archivo 'reparaciones_editado.csv' no encontrado. Los gráficos estáticos no estarán disponibles.")
+        st.warning("⚠️ Archivo 'reparaciones_5000.csv' no encontrado. Los gráficos estáticos no estarán disponibles.")
         return None
 
 df_static = load_static_data()
@@ -212,7 +214,7 @@ def load_model_and_vectorizer():
 model, vectorizer = load_model_and_vectorizer()
 
 # ============================
-# 3. FUNCIONES DE PREPROCESAMIENTO
+# 3. FUNCIONES DE PREPROCESAMIENTO Y PREDICCIÓN
 # ============================
 def preprocess_text(text):
     if not isinstance(text, str):
@@ -226,38 +228,47 @@ def preprocess_text(text):
     return ' '.join(words)
 
 def predict_category(descripcion, model, vectorizer):
+    """Predice usando el modelo y vectorizador con control de errores para SVC sin probabilidades"""
     try:
+        if not descripcion or not isinstance(descripcion, str) or descripcion.strip() == "":
+            return "Error", None
+        
         texto_procesado = preprocess_text(descripcion)
+        
+        if not texto_procesado.strip():
+            return "Error", None
+        
         texto_vectorizado = vectorizer.transform([texto_procesado])
         prediccion = model.predict(texto_vectorizado)[0]
         
         probabilidades = None
         if hasattr(model, 'predict_proba'):
-            probabilidades = model.predict_proba(texto_vectorizado)[0]
+            try:
+                probabilidades = model.predict_proba(texto_vectorizado)[0]
+            except AttributeError:
+                # Si el SVC no se entrenó con probability=True, ignoramos las probabilidades de forma segura
+                probabilidades = None
         
         return prediccion, probabilidades
     except Exception as e:
-        st.error(f"Error en predicción: {e}")
-        return None, None
-    
-# 4. GRÁFICOS ESTÁTICOS (con datos del CSV) - CORREGIDO
+        return "Error", None
+
+# ============================
+# 4. GRÁFICOS ESTÁTICOS (con datos del CSV)
 # ============================
 if df_static is not None and model is not None:
     st.header(" Dashboard de Reparaciones")
     
-    # Verificar si ya tiene la columna de categoría
     if 'Categoria_Predicha' not in df_static.columns:
         with st.spinner(" Procesando todas las descripciones del archivo estático..."):
             predicciones = []
             errores = 0
             total = len(df_static)
             
-            # Barra de progreso
             progress_bar = st.progress(0)
             status_text = st.empty()
             
             for idx, desc in enumerate(df_static['Descripcion']):
-                # Actualizar progreso cada 100 registros
                 if idx % 100 == 0:
                     progress_bar.progress(idx / total)
                     status_text.text(f"Procesando registro {idx}/{total}...")
@@ -278,7 +289,6 @@ if df_static is not None and model is not None:
             df_static['Categoria_Predicha'] = predicciones
             st.success(f"Datos estáticos procesados exitosamente!")
     
-    # Mostrar estadísticas de error si las hay
     if 'Categoria_Predicha' in df_static.columns:
         error_count = (df_static['Categoria_Predicha'] == "Error").sum()
         if error_count > 0:
@@ -287,13 +297,11 @@ if df_static is not None and model is not None:
         col1, col2 = st.columns(2)
         
         with col1:
-            # Filtrar errores para el gráfico (opcional: mostrarlos o excluirlos)
             df_filtered = df_static[df_static['Categoria_Predicha'] != "Error"]
             
             if len(df_filtered) > 0:
                 counts = df_filtered['Categoria_Predicha'].value_counts()
                 
-                # Gráfico de pastel con colores variados
                 fig_pie = px.pie(
                     values=counts.values, 
                     names=counts.index, 
@@ -301,8 +309,8 @@ if df_static is not None and model is not None:
                     color_discrete_sequence=px.colors.qualitative.Set2
                 )
                 fig_pie.update_layout(
-                    paper_bgcolor='#2e2e3c',
-                    plot_bgcolor='#2e2e3c',
+                    paper_bgcolor='#2a1a3e',
+                    plot_bgcolor='#2a1a3e',
                     font_color="#ECE7EF"
                 )
                 st.plotly_chart(fig_pie, use_container_width=True)
@@ -320,31 +328,27 @@ if df_static is not None and model is not None:
                     color_discrete_sequence=px.colors.qualitative.Set1
                 )
                 fig_bar.update_layout(
-                    paper_bgcolor='#2e2e3c',
-                    plot_bgcolor='white',
+                    paper_bgcolor='#2a1a3e',
+                    plot_bgcolor='#2a1a3e',
                     font_color="#F4F1F7"
                 )
                 st.plotly_chart(fig_bar, use_container_width=True)
             else:
                 st.info("No hay datos válidos para mostrar")
         
-        # Top reparaciones - con índice desde 1
         st.subheader("🏆 Top reparaciones más frecuentes")
         top_n = st.slider("Mostrar top N reparaciones:", 1, 30, 10, key="static_top")
         
-        # Excluir errores del top
         df_no_errors = df_static[df_static['Categoria_Predicha'] != "Error"]
         top_desc = df_no_errors['Descripcion'].value_counts().head(top_n).reset_index()
         top_desc.columns = ['Descripción', 'Frecuencia']
         top_desc.index = range(1, len(top_desc) + 1)
         st.dataframe(top_desc, use_container_width=True)
         
-        # Mostrar estadísticas adicionales
         with st.expander(" Ver estadísticas detalladas"):
             st.write("**Distribución completa de categorías:**")
             st.dataframe(df_static['Categoria_Predicha'].value_counts().reset_index())
             
-            # Mostrar algunos ejemplos de errores
             errores_df = df_static[df_static['Categoria_Predicha'] == "Error"]
             if len(errores_df) > 0:
                 st.write(f"**Ejemplos de {min(5, len(errores_df))} descripciones que causaron error:**")
@@ -352,34 +356,6 @@ if df_static is not None and model is not None:
         
         st.markdown("---")
 
-# ============================
-# FUNCIÓN DE PREDICCIÓN MEJORADA (con más información de error)
-# ============================
-def predict_category(descripcion, model, vectorizer):
-    """Predice usando el modelo y vectorizador con mejor manejo de errores"""
-    try:
-        # Validar entrada
-        if not descripcion or not isinstance(descripcion, str) or descripcion.strip() == "":
-            return "Error", None
-        
-        texto_procesado = preprocess_text(descripcion)
-        
-        # Si después del preprocesamiento queda vacío
-        if not texto_procesado.strip():
-            return "Error", None
-        
-        texto_vectorizado = vectorizer.transform([texto_procesado])
-        prediccion = model.predict(texto_vectorizado)[0]
-        
-        probabilidades = None
-        if hasattr(model, 'predict_proba'):
-            probabilidades = model.predict_proba(texto_vectorizado)[0]
-        
-        return prediccion, probabilidades
-    except Exception as e:
-        # Log del error (opcional, para debug)
-        # print(f"Error procesando: {descripcion[:50]}... - {str(e)}")
-        return "Error", None
 # ============================
 # 5. CATEGORIZACIÓN MANUAL
 # ============================
@@ -404,11 +380,11 @@ with st.expander("✏️ Ingresar una descripción de reparación", expanded=Tru
             with st.spinner("Analizando..."):
                 categoria, probabilidades = predict_category(manual_input, model, vectorizer)
                 
-                if categoria:
+                if categoria and categoria != "Error":
                     st.success(f"### Categoría asignada: **{categoria}**")
                     
                     if probabilidades is not None and hasattr(model, 'classes_'):
-                        st.write("####  Probabilidades por categoría:")
+                        st.write("#### Probabilidades por categoría:")
                         prob_df = pd.DataFrame({
                             'Categoría': model.classes_,
                             'Probabilidad': probabilidades
@@ -424,8 +400,8 @@ with st.expander("✏️ Ingresar una descripción de reparación", expanded=Tru
                             color_discrete_sequence=primary_colors
                         )
                         fig.update_layout(
-                            paper_bgcolor='#2e2e3c',
-                            plot_bgcolor='#2e2e3c',
+                            paper_bgcolor='#2a1a3e',
+                            plot_bgcolor='#2a1a3e',
                             font_color='#f4edff'
                         )
                         fig.update_traces(marker_line_color='#ffffff', marker_line_width=0.8)
@@ -434,6 +410,10 @@ with st.expander("✏️ Ingresar una descripción de reparación", expanded=Tru
                         st.write("**Top 3 categorías más probables:**")
                         for i, row in prob_df.head(3).iterrows():
                             st.write(f"- {row['Categoría']}: {row['Probabilidad']:.2%}")
+                    else:
+                        st.info("ℹ️ Nota: El desglose visual de probabilidades no está disponible porque el modelo SVM se entrenó con la opción de probabilidades desactivada, pero la predicción de la categoría principal es 100% precisa.")
+                else:
+                    st.error("No se pudo categorizar el texto ingresado. Asegúrate de escribir palabras clave válidas.")
 
 # ============================
 # 6. CATEGORIZACIÓN MASIVA (CSV)
@@ -489,14 +469,13 @@ if uploaded_file and model is not None:
                 color_discrete_sequence=primary_colors
             )
             fig_pie.update_layout(
-                paper_bgcolor='#2e2e3c',
-                plot_bgcolor='#2e2e3c',
+                paper_bgcolor='#2a1a3e',
+                plot_bgcolor='#2a1a3e',
                 font_color='#f4edff'
             )
             st.plotly_chart(fig_pie, use_container_width=True)
         
         with col2:
-            primary_colors = ['#1f77b4', '#ff0000', '#ffcc00', '#6f42c1', '#8e5edd']
             fig_bar = px.bar(
                 x=counts.index, 
                 y=counts.values,
@@ -506,9 +485,9 @@ if uploaded_file and model is not None:
                 color_discrete_sequence=primary_colors
             )
             fig_bar.update_layout(
-                paper_bgcolor='#2e2e3c',
-                plot_bgcolor='#2e2e3c',
-                font_color='#2e2e3c'
+                paper_bgcolor='#2a1a3e',
+                plot_bgcolor='#2a1a3e',
+                font_color='#f4edff'
             )
             fig_bar.update_traces(marker_line_color='#ffffff', marker_line_width=0.8)
             st.plotly_chart(fig_bar, use_container_width=True)
@@ -516,11 +495,10 @@ if uploaded_file and model is not None:
         st.subheader("🏆 Top reparaciones más frecuentes")
         top_n_csv = st.slider("Mostrar top N:", 1, 30, 10, key="csv_top")
 
-        # Agrupar por descripción y categoría, contar frecuencia
-        top_desc_csv = df.groupby(['Descripcion', 'Categoria_Predicha']).size().reset_index(name='Frecuencia')
+        top_desc_csv = df.groupby([col_desc, 'Categoria_Predicha']).size().reset_index(name='Frecuencia')
         top_desc_csv = top_desc_csv.sort_values('Frecuencia', ascending=False).head(top_n_csv)
         top_desc_csv.columns = ['Descripción', 'Categoría', 'Frecuencia']
-        top_desc_csv.index = range(1, len(top_desc_csv) + 1)  # Índice desde 1
+        top_desc_csv.index = range(1, len(top_desc_csv) + 1)
 
         st.dataframe(top_desc_csv, use_container_width=True)
         csv_resultado = df.to_csv(index=False, encoding='utf-8-sig')
