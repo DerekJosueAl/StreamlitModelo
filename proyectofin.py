@@ -4,6 +4,7 @@ import numpy as np
 import joblib
 import plotly.express as px
 import re
+import re
 import unicodedata
 from nltk.corpus import stopwords
 import nltk
@@ -544,5 +545,6 @@ if model is not None:
     - Preprocesamiento: Limpieza + stopwords español
     - Categorías: {len(model.classes_) if hasattr(model, 'classes_') else 'N/A'}
     """)
+
 
 st.sidebar.markdown("---")
